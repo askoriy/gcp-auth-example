@@ -1,4 +1,4 @@
-name: API GW Example Backend
+name: CI
 
 on:
   push:
@@ -6,50 +6,36 @@ on:
       - 'cloud-run/api-gw/backend/**'
       - '.github/workflows/example_backend.yml'
 
-
-# Environment variables available to all jobs and steps in this workflow
-env:
-  GCP_REGISTRY: eu.gcr.io
-  GCP_PROJECT: api-gw-example-backend
-  GITHUB_SHA: ${{ github.sha }}
-  GCP_ZONE: europe-west1
-  IMAGE: api-gw-example-backend
+env: 
+  PROJECT_ID: main-104
+  SERVICE_NAME: simpleserver
 
 jobs:
-
   build:
 
     runs-on: ubuntu-latest
 
     steps:
-    # Build backend service docker image
     - uses: actions/checkout@v1
-    - name: Build the Docker image
-      run: docker build . --file ./cloud-run/api-gw/backend/Dockerfile --tag $GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA
-
-    # Setup gcloud CLI
+      
+    - name: Build the Docker Image 
+      run: docker build simpleserver -t gcr.io/main-104/$SERVICE_NAME
+    
     - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
       with:
-        version: '274.0.0'
-        service_account_key: ${{ secrets.API_GW_BACKEND_KEY }}
-
-    # Configure docker to use the gcloud command-line tool as a credential helper
-    - run: |
-        gcloud auth configure-docker
+        version: ‘274.0.0’
+        service_account_key: ${{ secrets.SERVICE_ACCOUNT }}
     
-    # Push the Docker image to Google Container Registry
-    - name: Publish
-      run: |
-        docker push $GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA
+    - run: gcloud auth configure-docker
 
-    # Deploy the Docker image to the GKE cluster
-    - name: Deploy
+    - name: Push image
+      run: docker push gcr.io/$PROJECT_ID/$SERVICE_NAME
+    
+    - name: Cloud Run Deploy 
       run: |
-        gcloud run deploy $IMAGE --image=$GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA --project=$GCP_PROJECT --region=$GCP_ZONE --platform=managed 
-
-    # Bind run.invoke role for API compute service account to backend service
-    - name: Bind
-      run: |
-        gcloud run services add-iam-policy-binding api-gw-example-backend --member "serviceAccount:632303563719-compute@developer.gserviceaccount.com" --role "roles/run.invoker" --platform managed --project=$GCP_PROJECT --region=$GCP_ZONE 
-
+          gcloud run deploy $SERVICE_NAME \
+            --project $PROJECT_ID \
+            --image gcr.io/$PROJECT_ID/$SERVICE_NAME \
+            --platform managed \
+            --region us-central1 
       
