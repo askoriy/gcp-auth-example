@@ -1,0 +1,31 @@
+  swagger: '2.0'
+  info:
+    title: Cloud Endpoints + Cloud Run
+    description: Sample API on Cloud Endpoints with a Cloud Run backend
+    version: 1.0.0
+  host: api-gw-y5x3xwsyla-ew.a.run.app
+  schemes:
+    - https
+  produces:
+    - application/json
+  x-google-backend:
+    address: https://middleend-y5x3xwsyla-ew.a.run.app
+  paths:
+    /about:
+      get:
+        summary: Just to check the service health
+        operationId: about
+        responses:
+          '200':
+            description: A successful response
+            schema:
+              type: string
+    /api:
+      get:
+        summary: Access the middleend api
+        operationId: api
+        responses:
+          '200':
+            description: A successful response
+            schema:
+              type: string

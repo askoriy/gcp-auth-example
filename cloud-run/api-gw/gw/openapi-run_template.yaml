@@ -1,0 +1,31 @@
+  swagger: '2.0'
+  info:
+    title: Cloud Run backend with APIGW
+    description: Sample API on Cloud Endpoints with a Cloud Run backend
+    version: 1.0.0
+  host: $APIGW_HOST
+  schemes:
+    - https
+  produces:
+    - application/json
+  x-google-backend:
+    address: $SERVICE_URL
+  paths:
+    /about:
+      get:
+        summary: Just to check the service health
+        operationId: about
+        responses:
+          '200':
+            description: A successful response
+            schema:
+              type: string
+    /api:
+      get:
+        summary: Access the API
+        operationId: api
+        responses:
+          '200':
+            description: A successful response
+            schema:
+              type: string

@@ -1,0 +1,55 @@
+name: API GW Example Backend
+
+on:
+  push:
+    paths:
+      - 'cloud-run/api-gw/backend/**'
+      - '.github/workflows/example_backend.yml'
+
+
+# Environment variables available to all jobs and steps in this workflow
+env:
+  GCP_REGISTRY: eu.gcr.io
+  GCP_PROJECT: api-gw-example-backend
+  GITHUB_SHA: ${{ github.sha }}
+  GCP_ZONE: europe-west1
+  IMAGE: api-gw-example-backend
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    # Build backend service docker image
+    - uses: actions/checkout@v1
+    - name: Build the Docker image
+      run: docker build . --file ./cloud-run/api-gw/backend/Dockerfile --tag $GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA
+
+    # Setup gcloud CLI
+    - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+      with:
+        version: '274.0.0'
+        service_account_key: ${{ secrets.API_GW_BACKEND_KEY }}
+
+    # Configure docker to use the gcloud command-line tool as a credential helper
+    - run: |
+        gcloud auth configure-docker
+    
+    # Push the Docker image to Google Container Registry
+    - name: Publish
+      run: |
+        docker push $GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA
+
+    # Deploy the Docker image to the GKE cluster
+    - name: Deploy
+      run: |
+        gcloud run deploy $IMAGE --image=$GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA --project=$GCP_PROJECT --region=$GCP_ZONE --platform=managed 
+
+    # Bind run.invoke role for API compute service account to backend service
+    - name: Bind
+      run: |
+        gcloud run services add-iam-policy-binding api-gw-example-backend --member "serviceAccount:632303563719-compute@developer.gserviceaccount.com" --role "roles/run.invoker" --platform managed --project=$GCP_PROJECT --region=$GCP_ZONE 
+
+      

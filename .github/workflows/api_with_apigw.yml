@@ -1,0 +1,128 @@
+name: API Service with API GW
+
+on:
+  push:
+    paths:
+    - 'cloud-run/api-gw/api/**'
+    - 'cloud-run/api-gw/gw/**'
+    - '.github/workflows/api_with_apigw.yml'
+
+# Environment variables available to all jobs and steps in this workflow
+env:
+  GCP_REGISTRY: eu.gcr.io
+  GCP_PROJECT: api-gw-example-api
+  GITHUB_SHA: ${{ github.sha }}
+  GCP_REGION: europe-west1
+  IMAGE: api
+  APIGW: api-gw
+  ENDPOINT_CONF_ID: 2020-01-15r1
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+
+    # # Check
+#    - name: Checking
+#      run: |
+#        pwd
+#        ls -l
+#        ls -l ./cloud-run/api-gw/gw/
+    
+    # Build Cloud Run Service Image
+    - name: Build Cloud Run Service Image
+      if: success()
+      run: docker build . --file ./cloud-run/api-gw/api/Dockerfile --tag $GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA
+
+    # Setup gcloud CLI
+    - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+      with:
+        version: '274.0.0'
+        service_account_key: ${{ secrets.API_GW_API_KEY }}
+
+    # Configure docker to use the gcloud command-line tool as a credential helper
+    - run: |
+        # Set up docker to authenticate
+        # via gcloud command-line tool.
+        gcloud auth configure-docker
+        gcloud config set run/platform managed
+        gcloud config set run/region $GCP_REGION
+        gcloud config set project $GCP_PROJECT
+    
+    # Push the Docker image to Google Container Registry
+    - name: Publish
+      run: |
+        docker push $GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA
+
+    # # Deploy API GW service
+    - name: Deploy API GW Service
+      run: |
+        gcloud run services describe $APIGW --verbosity=none
+        if [ $? -eq 0 ]; then
+            echo Service already deployed!
+        else
+          echo Deploying initial API GW Service
+          gcloud run deploy $APIGW --image="gcr.io/endpoints-release/endpoints-runtime-serverless:2" --allow-unauthenticated
+        fi
+        echo "::set-env name=APIGW_HOST::$(gcloud run services describe $APIGW --format="value(status.url)" | sed -e 's#^https://##; s#/score/$##' )"
+
+    # # Deploy the Docker image to the Cloud Run
+    - name: Deploy Service
+      run: |
+        gcloud run deploy $IMAGE --image=$GCP_REGISTRY/$GCP_PROJECT/$IMAGE:$GITHUB_SHA
+
+    # # Get Service URL to var
+    - name: Get Service URL
+      run: |
+        echo "::set-env name=SERVICE_URL::$(gcloud run services describe $IMAGE --format="value(status.url)" --platform=managed --project=$GCP_PROJECT --region=$GCP_REGION)"
+
+    # # Use ENV VAR
+    - name: Use env var
+      run: |
+        echo $SERVICE_URL
+        echo $APIGW_HOST
+
+    # # Envsubst
+    - name: Envsubst
+      run: |
+        pwd
+        ls -l
+        ls -l ./cloud-run/api-gw/gw/
+        envsubst < ./cloud-run/api-gw/gw/openapi-run_template.yaml > ./cloud-run/api-gw/gw/openapi_conf.yaml
+        cat ./cloud-run/api-gw/gw/openapi_conf.yaml
+    
+    # # Deploy Endpoint Service
+    - name: Deploy Endpoint Service with config
+      run: |
+        gcloud endpoints services deploy ./cloud-run/api-gw/gw/openapi_conf.yaml --project=$GCP_PROJECT
+
+    # # Get Endpoint Config Id
+    - name: Get Endpoint Config Id
+      run: |
+        gcloud endpoints services describe $APIGW_HOST --format="value(serviceConfig.id)" --project=$GCP_PROJECT
+        gcloud endpoints services describe $APIGW_HOST
+    #     #echo "::set-env name=ENDPOINT_CONF_ID::$(gcloud endpoints services describe $APIGW_HOST --format="value(serviceConfig.id)" --project=$GCP_PROJECT)"
+    #     echo "::set-env name=ENDPOINT_CONF_ID::$(echo 2020-01-14r1)"
+
+    # # Use ENV VAR
+    - name: Use env var
+      run: |
+        echo $ENDPOINT_CONF_ID
+        echo $APIGW_HOST
+
+    # # Create Custom API GW Image
+    - name: Create Custom API GW Image
+      if: success()
+      run: |
+        echo $ENDPOINT_CONF_ID
+        ./cloud-run/api-gw/gw/gcloud-build-image.sh -s $APIGW_HOST -c $ENDPOINT_CONF_ID -p $GCP_PROJECT
+
+    # # Deploy API GW Service With Custom Image
+    - name: Deploy API GW Service With Custom Image
+      run: |
+        gcloud run deploy $APIGW --image="gcr.io/$GCP_PROJECT/endpoints-runtime-serverless:$APIGW_HOST-$ENDPOINT_CONF_ID" --allow-unauthenticated --platform managed --project=$GCP_PROJECT --region=$GCP_REGION
+      
