@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@v1
       
     - name: Build the Docker Image 
-      run: docker build simpleserver -t gcr.io/main-104/$SERVICE_NAME
+      run: docker build . --file ./cloud-run/api-gw/backend/Dockerfile -t gcr.io/main-104/$SERVICE_NAME
     
     - uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
       with:
